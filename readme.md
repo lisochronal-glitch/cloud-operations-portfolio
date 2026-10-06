@@ -109,7 +109,7 @@ Lambda関数は、訪問者ごとのレコードとグローバル集計レコ�
 
 このサイトは、プライベートS3バケットをオリジンとして、CloudFront経由で配信しています。これにより、S3バケットをプライベートに保ちながら、CloudFrontが公開HTTPSエンドポイントを提供します。
 
-AWS Amplify Hostingも使用していません。Amplifyは便利なマネージドホスティングですが、このプロジェクトでは、基礎となるクラウド運用作業を示すために、S3とCloudFrontを直接使用しています。具体的には、プライベートバケットアクセス、CloudFront配信、バケットポリシー設定、キャッシュ無効化、IAMガードレール、将来のデプロイ自動化を扱っています。
+AWS Amplify Hostingも使用していません。Amplifyは便利なマネージドホスティングですが、このプロジェクトでは、基礎となるクラウド運用作業を示すために、S3とCloudFrontを直接使用しています。具体的には、プライベートバケットアクセス、CloudFront配信、バケットポリシー設定、キャッシュ無効化、IAMガードレール、GitHub Actionsによるデプロイ自動化を扱っています。
 
 ## IAMと権限モデル
 
@@ -150,7 +150,7 @@ Local AWS profile
 → CloudFront invalidation
 ```
 
-これは、1つのIAMユーザーに直接デプロイ権限を与えるよりも複雑です。しかし、これは意図的な設計です。目的は、**認証元**と**デプロイ権限セット**を分離し、同じデプロイロールをGitHub Actionsでも再利用できるようにすることです。
+これは、1つのIAMユーザーに直接デプロイ権限を与えるよりも複雑です。しかし、これは意図的な設計です。**認証元**と**デプロイ権限セット**を分離しており、現在はGitHub Actionsでも同じデプロイロールを再利用しています。
 
 ### コンポーネント
 
@@ -182,7 +182,7 @@ IAM user access key
 
 これは機能しますし、小規模なローカル専用プロジェクトであれば、より簡単です。
 
-しかし、このプロジェクトでは次の流れを使用しています。
+このプロジェクトのローカルデプロイテストでは、次の流れを使用しました。
 
 ```text
 IAM user access key
@@ -282,15 +282,15 @@ s3:PutLifecycleConfiguration
 
 `S3:PutObject`と`cloudfront:CreateInvalidation`だけを許可したIAMユーザーを直接使用する設計でも有効です。
 
-それでもこのプロジェクトでロールベースの設計を使っている理由は、意図している最終構成により近いからです。
+このプロジェクトでは、ローカルテストと現在のGitHub Actionsによるデプロイで同じ権限セットを再利用できるため、ロールベースの設計を使っています。
 
 ```text
-today:
+Earlier local testing:
 Local IAM user key
 → assume PortfolioDeployRole
 → run Python deployment
 
-CI/CD:
+Current CI/CD:
 GitHub Actions OIDC
 → assume PortfolioDeployRole
 → run Python deployment
@@ -298,12 +298,12 @@ GitHub Actions OIDC
 
 ローカルIAMユーザーは、学習とローカルテストのための一時的な足場でした。現在、通常のデプロイはGitHub Actionsに移行しているため、通常運用のデプロイは恒久的なローカルIAMユーザーアクセスキーに依存していません。
 
-### 望ましい最終デプロイフロー
+### 現在の自動デプロイフロー
 
-意図している最終ワークフローは次の通りです。
+実装済みのワークフローは次の通りです。
 
 ```text
-git push
+git push to main (deployment-related changes)
 → GitHub Actions starts
 → GitHub assumes PortfolioDeployRole
 → Python deployment script runs
@@ -311,7 +311,7 @@ git push
 → CloudFront invalidation is created
 ```
 
-この段階では、通常のデプロイに必要なのは次の操作だけになります。
+デプロイ対象の変更を含む通常のデプロイでは、`main`ブランチで次の操作を行います。
 
 ```bash
 git add .
@@ -493,7 +493,7 @@ Secure VPC Foundation プロジェクトです。
 現在のデプロイフローは次の通りです。
 
 ```text
-git push to main
+git push to main (deployment-related changes)
 → GitHub Actions workflow starts
 → GitHub Actions assumes PortfolioDeployRole through OIDC
 → Python deployment script runs
@@ -524,7 +524,7 @@ git commit -m "Update portfolio"
 git push
 ```
 
-push後、GitHub Actionsが自動的にデプロイワークフローを実行します。
+`website/**`、`tools/deploy.py`、または`.github/workflows/deploy.yml`の変更を`main`にpushすると、GitHub Actionsが自動的にデプロイワークフローを実行します。READMEのみの変更では実行されません。
 
 ## ローカルPythonデプロイテスト
 
@@ -575,7 +575,7 @@ Cache invalidated: IAY301RL9CHESDUIISB7RBYPYM
 
 現在、GitHub Actionsを自動デプロイに使用しています。
 
-このワークフローは、`main`ブランチに変更がpushされたときに実行されます。リポジトリをチェックアウトし、Pythonをセットアップし、`boto3`をインストールし、一時的なAWS認証情報を設定して、Pythonデプロイスクリプトを実行します。
+このワークフローは、`website/**`、`tools/deploy.py`、または`.github/workflows/deploy.yml`の変更が`main`ブランチにpushされたときに実行されます。`workflow_dispatch`による手動実行も可能です。リポジトリをチェックアウトし、Pythonをセットアップし、`boto3`をインストールし、一時的なAWS認証情報を設定して、Pythonデプロイスクリプトを実行します。
 
 GitHub ActionsワークフローはOpenID Connect（OIDC）を使用して、次のロールをassumeします。
 
@@ -610,7 +610,7 @@ GitHub Actions job
    Pythonデプロイスクリプトが、ローカルマシンからサイトファイルをS3へアップロードし、CloudFront invalidationを作成しました。
 
 3. GitHub Actions CI/CD
-   同じデプロイロジックが、`main`ブランチへのpush後にGitHub Actionsから自動実行されるようになりました。
+   同じデプロイロジックが、デプロイ対象の変更を`main`ブランチにpushした後にGitHub Actionsから自動実行されるようになりました。
 
 この進化は意図的なものです。まず手動プロセスを理解し、その後ローカルで自動化し、最後にCI/CDパターンへ移行しました。
 

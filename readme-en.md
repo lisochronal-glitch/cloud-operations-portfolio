@@ -110,7 +110,7 @@ S3 static website hosting is intentionally disabled for this project.
 
 This site is delivered through CloudFront using a private S3 bucket as the origin. This keeps the S3 bucket private while CloudFront provides the public HTTPS endpoint.
 
-AWS Amplify Hosting is also not used for this project. Amplify would be a convenient managed hosting option, but this project intentionally uses S3 and CloudFront directly in order to demonstrate the underlying cloud operations work: private bucket access, CloudFront delivery, bucket policy configuration, cache invalidation, IAM guardrails, and future deployment automation.
+AWS Amplify Hosting is also not used for this project. Amplify would be a convenient managed hosting option, but this project intentionally uses S3 and CloudFront directly in order to demonstrate the underlying cloud operations work: private bucket access, CloudFront delivery, bucket policy configuration, cache invalidation, IAM guardrails, and deployment automation through GitHub Actions.
 
 
 ## IAM and Permissions Model
@@ -152,7 +152,7 @@ Local AWS profile
 → CloudFront invalidation
 ```
 
-This is more complex than giving one IAM user direct deployment permissions, but it is intentional. The goal is to separate **authentication source** from **deployment permission set**, so the deploy role could be reused by GitHub Actions.
+This is more complex than giving one IAM user direct deployment permissions, but it is intentional. It separates **authentication source** from **deployment permission set**, and GitHub Actions now reuses the same deploy role.
 
 ### Components
 
@@ -184,7 +184,7 @@ IAM user access key
 
 That would work, and for a small local-only project it would be simpler.
 
-This project instead uses:
+Local deployment testing in this project used:
 
 ```text
 IAM user access key
@@ -284,15 +284,15 @@ For local-only deployment, this design is more complicated than necessary.
 
 A direct IAM user with narrowly scoped `s3:PutObject` and `cloudfront:CreateInvalidation` permissions would also be valid.
 
-This project uses the role-based design anyway because it better matches the intended final architecture:
+This project uses the role-based design to reuse the same permission set for local testing and the current GitHub Actions deployment:
 
 ```text
-today:
+Earlier local testing:
 Local IAM user key
 → assume PortfolioDeployRole
 → run Python deployment
 
-CI/CD:
+Current CI/CD:
 GitHub Actions OIDC
 → assume PortfolioDeployRole
 → run Python deployment
@@ -300,12 +300,12 @@ GitHub Actions OIDC
 
 The local IAM user was temporary scaffolding for learning and local testing. Routine deployment has now moved to GitHub Actions, so normal deployment no longer depends on a permanent local IAM user access key.
 
-### Desired final deployment flow
+### Current automated deployment flow
 
-The intended final workflow is:
+The implemented workflow is:
 
 ```text
-git push
+git push to main (deployment-related changes)
 → GitHub Actions starts
 → GitHub assumes PortfolioDeployRole
 → Python deployment script runs
@@ -313,7 +313,7 @@ git push
 → CloudFront invalidation is created
 ```
 
-At that point, routine deployment should require only:
+For routine deployment with deployment-related changes, run the following on `main`:
 
 ```bash
 git add .
@@ -321,7 +321,7 @@ git commit -m "Update portfolio"
 git push
 ```
 
-No manual AWS Console login should be required for normal deployment.
+No manual AWS Console login is required for normal deployment.
 
 
 ## S3 Protection Guardrail
@@ -500,7 +500,7 @@ Routine deployment is now automated through GitHub Actions.
 Current deployment flow:
 
 ```text
-git push to main
+git push to main (deployment-related changes)
 → GitHub Actions workflow starts
 → GitHub Actions assumes PortfolioDeployRole through OIDC
 → Python deployment script runs
@@ -531,7 +531,7 @@ git commit -m "Update portfolio"
 git push
 ```
 
-After the push, GitHub Actions runs the deployment workflow automatically.
+After changes to `website/**`, `tools/deploy.py`, or `.github/workflows/deploy.yml` are pushed to `main`, GitHub Actions runs the deployment workflow automatically. README-only changes do not trigger deployment.
 
 ## Local Python Deployment Test
 
@@ -582,7 +582,7 @@ This confirmed that the local deployment chain worked before moving the workflow
 
 GitHub Actions is now used for automated deployment.
 
-The workflow runs when changes are pushed to the `main` branch. It checks out the repository, sets up Python, installs `boto3`, configures temporary AWS credentials, and runs the Python deployment script.
+The workflow runs when changes to `website/**`, `tools/deploy.py`, or `.github/workflows/deploy.yml` are pushed to the `main` branch. It can also be started manually through `workflow_dispatch`. It checks out the repository, sets up Python, installs `boto3`, configures temporary AWS credentials, and runs the Python deployment script.
 
 The GitHub Actions workflow uses OpenID Connect (OIDC) to assume:
 
@@ -617,7 +617,7 @@ The deployment workflow evolved in stages:
    A Python deployment script uploaded the site files to S3 and created the CloudFront invalidation from the local machine.
 
 3. GitHub Actions CI/CD
-   The same deployment logic now runs automatically from GitHub Actions after changes are pushed to the `main` branch.
+   The same deployment logic now runs automatically from GitHub Actions after deployment-related changes are pushed to the `main` branch.
 
 This progression was intentional: first understand the manual process, then automate it locally, then move the workflow into a CI/CD pattern.
 
